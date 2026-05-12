@@ -2,15 +2,10 @@
 services:
   - type: web
     name: philtech-payroll
-    runtime: php
+    runtime: docker
     repo: https://github.com/MERVINMICOSA/PAYROLL.git
     branch: main
-    buildCommand: |
-      # Copy all files to the deployment directory
-      cp -r * /opt/render/project/src/
-      # Create logs directory
-      mkdir -p /opt/render/project/src/logs
-    startCommand: php -S 0.0.0.0:10000
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: APP_ENV
         value: production
