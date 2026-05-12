@@ -1,5 +1,5 @@
 # Dockerfile for Render - Node.js Runtime
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Install git (for potential dependencies)
 RUN apk add --no-cache git curl
