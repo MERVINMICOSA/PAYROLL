@@ -1,43 +1,30 @@
-# Dockerfile for Render
-FROM php:8.2-apache
+# Dockerfile for Render - Node.js Runtime
+FROM node:18-alpine
 
-# Install PostgreSQL PDO extension and other dependencies
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    zip \
-    unzip \
-    git \
-    curl \
-    && docker-php-ext-install pdo_pgsql pdo_mysql \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd
+# Install git (for potential dependencies)
+RUN apk add --no-cache git curl
 
-# Enable Apache modules
-RUN a2enmod rewrite \
-    && a2enmod headers \
-    && a2enmod expires
+# Set working directory
+WORKDIR /app
 
-# Copy all files to Apache document root
-COPY . /var/www/html/
+# Copy package files
+COPY package*.json ./
 
-# Set proper permissions
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html \
-    && chmod -R 775 /var/www/html/api/logs 2>/dev/null || true
+# Install dependencies
+RUN npm ci --only=production
 
-# Configure Apache to serve from root and handle .htaccess
-RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf \
-    && echo "<Directory /var/www/html>" >> /etc/apache2/apache2.conf \
-    && echo "    Options Indexes FollowSymLinks" >> /etc/apache2/apache2.conf \
-    && echo "    AllowOverride All" >> /etc/apache2/apache2.conf \
-    && echo "    Require all granted" >> /etc/apache2/apache2.conf \
-    && echo "</Directory>" >> /etc/apache2/apache2.conf
+# Copy application code
+COPY . .
 
-# Expose port 80
-EXPOSE 80
+# Create logs directory if needed
+RUN mkdir -p api/logs 2>/dev/null || true
 
-# Start Apache
-CMD ["apache2-foreground"]
+# Expose port for Node app
+EXPOSE 10000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:10000/api/health || exit 1
+
+# Start Node application
+CMD ["node", "server.js"]
