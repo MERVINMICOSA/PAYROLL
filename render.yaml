@@ -3,7 +3,7 @@ services:
   - type: web
     name: philtech-payroll
     runtime: php
-    repo: https://github.com/YOUR_USERNAME/YOUR_REPO.git
+    repo: https://github.com/MERVINMICOSA/PAYROLL.git
     branch: main
     buildCommand: |
       # Copy all files to the deployment directory
