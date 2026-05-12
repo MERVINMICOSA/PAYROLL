@@ -1,25 +1,8 @@
 // js/login.js - Complete with all roles
 document.addEventListener('DOMContentLoaded', () => {
-    // Check if already logged in
-    const token = localStorage.getItem('token');
-    if (token && !window.location.pathname.includes('index.html')) {
-        return;
-    }
-    
-    if (token && window.location.pathname.includes('index.html')) {
-        const userRole = localStorage.getItem('userRole');
-        const dashboards = {
-            'superadmin': 'dashboardSadmin.html',
-            'accountant': 'dashboard.html',
-            'oic': 'dashboard-oic.html',
-            'teacher': 'teacher-dashboard.html',
-            'guard': 'dashboard-guard.html',
-            'sa': 'dashboard-sa.html',
-            'admin_staff': 'dashboard-staff.html'
-        };
-        window.location.href = dashboards[userRole] || 'dashboard.html';
-        return;
-    }
+    // Session-based auth: do not redirect based on localStorage tokens
+    // Navigation.js + /api/auth/session.php will handle protected page redirects.
+
     
     // Load remembered username
     const rememberedUser = localStorage.getItem('rememberedUser');
@@ -92,12 +75,15 @@ async function handleLogin(username, password, rememberMe) {
         
         const data = await response.json();
         
-        if (data.success && data.token) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
-            localStorage.setItem('userRole', data.user.role);
-            localStorage.setItem('userName', data.user.full_name);
-            localStorage.setItem('isLoggedIn', 'true');
+        if (data.success) {
+            // PHP session cookie is set by /api/auth/login.php
+            // Do NOT store auth token/user in localStorage to prevent auth mismatch with PHP sessions.
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userName');
+            localStorage.removeItem('isLoggedIn');
+
             
             if (rememberMe) {
                 localStorage.setItem('rememberedUser', username);

@@ -37,28 +37,35 @@ try {
     
     if ($isPostgres) {
         // PostgreSQL version
+        $teacherHash = password_hash('teacher123', PASSWORD_BCRYPT);
+
         $stmt = $conn->prepare("
             INSERT INTO users (username, password_hash, full_name, role, status, created_at, updated_at) 
             VALUES 
             ('accountant', :hash1, 'School Accountant', 'accountant', 'Active', NOW(), NOW()),
             ('superadmin', :hash2, 'Super Administrator', 'superadmin', 'Active', NOW(), NOW()),
-            ('oic', :hash3, 'OIC Head', 'oic', 'Active', NOW(), NOW())
+            ('oic', :hash3, 'OIC Head', 'oic', 'Active', NOW(), NOW()),
+            ('teacher', :hash4, 'Sample Teacher', 'teacher', 'Active', NOW(), NOW())
         ");
         $stmt->execute([
             ':hash1' => $accountantHash,
             ':hash2' => $superadminHash,
-            ':hash3' => $oicHash
+            ':hash3' => $oicHash,
+            ':hash4' => $teacherHash
         ]);
     } else {
         // MySQL version
+        $teacherHash = password_hash('teacher123', PASSWORD_BCRYPT);
+
         $stmt = $conn->prepare("
             INSERT INTO users (username, password_hash, full_name, role, status, created_at, updated_at) 
             VALUES 
             ('accountant', ?, 'School Accountant', 'accountant', 'Active', NOW(), NOW()),
             ('superadmin', ?, 'Super Administrator', 'superadmin', 'Active', NOW(), NOW()),
-            ('oic', ?, 'OIC Head', 'oic', 'Active', NOW(), NOW())
+            ('oic', ?, 'OIC Head', 'oic', 'Active', NOW(), NOW()),
+            ('teacher', ?, 'Sample Teacher', 'teacher', 'Active', NOW(), NOW())
         ");
-        $stmt->bind_param("sss", $accountantHash, $superadminHash, $oicHash);
+        $stmt->bind_param("ssss", $accountantHash, $superadminHash, $oicHash, $teacherHash);
         $stmt->execute();
     }
     

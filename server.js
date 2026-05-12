@@ -120,31 +120,42 @@ async function initializeDatabase() {
             console.log('👤 Creating default PostgreSQL users...');
             const salt = await bcrypt.genSalt(10);
             
-            // Only create accountant and superadmin (NO teacher)
+            // Create accountant, superadmin, and teacher
             const adminHash = await bcrypt.hash('admin123', salt);
             const superHash = await bcrypt.hash('superadmin123', salt);
+            const teacherHash = await bcrypt.hash('teacher123', salt);
 
             await pool.query(`
                 INSERT INTO users (username, password_hash, full_name, role) VALUES 
                 ($1, $2, $3, $4),
-                ($5, $6, $7, $8)
+                ($5, $6, $7, $8),
+                ($9, $10, $11, $12)
             `, [
                 'accountant', adminHash, 'School Accountant', 'accountant',
-                'superadmin', superHash, 'Super Admin', 'superadmin'
+                'superadmin', superHash, 'Super Admin', 'superadmin',
+                'teacher', teacherHash, 'Sample Teacher', 'teacher'
             ]);
-            console.log('✅ Default PostgreSQL users created (accountant & superadmin)');
+            console.log('✅ Default PostgreSQL users created (accountant, superadmin & teacher)');
         }
 
-        // Create sample employee if none exist
+        // Create test employees if none exist
         const empResult = await pool.query('SELECT COUNT(*) FROM employees');
         if (parseInt(empResult.rows[0].count) === 0) {
+            console.log('👥 Creating test employees...');
             await pool.query(`
                 INSERT INTO employees (employee_id, full_name, position, department, employment_type, base_salary, email, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                VALUES 
+                ($1, $2, $3, $4, $5, $6, $7, $8),
+                ($9, $10, $11, $12, $13, $14, $15, $16),
+                ($17, $18, $19, $20, $21, $22, $23, $24),
+                ($25, $26, $27, $28, $29, $30, $31, $32)
             `, [
-                'TCH001', 'Sample Teacher', 'Senior Teacher', 'Academic', 'Regular', 25000, 'teacher@philtech.edu', 'Active'
+                'TCH001', 'Sample Teacher', 'Senior Teacher', 'Academic', 'Regular', 25000, 'teacher@philtech.edu', 'Active',
+                'TCH002', 'Another Teacher', 'Teacher', 'Academic', 'Regular', 22000, 'teacher2@philtech.edu', 'Active',
+                'NON001', 'Non-Teaching Staff', 'Clerk', 'Admin', 'Contractual', 15000, 'staff@philtech.edu', 'Active',
+                'TCH003', 'Head Teacher', 'Head Teacher', 'Academic', 'Regular', 30000, 'headteacher@philtech.edu', 'Active'
             ]);
-            console.log('✅ Sample employee created');
+            console.log('✅ Test employees created');
         }
 
     } catch (err) {
@@ -203,8 +214,208 @@ async function initializeFirestore() {
                 created_at: new Date().toISOString()
             });
             
+            // Create teacher in Firebase Auth
+            const teacherRecord = await auth.createUser({
+                email: 'teacher@philtech.edu',
+                password: 'teacher123',
+                displayName: 'Sample Teacher'
+            });
+            
+            await db.collection('users').doc(teacherRecord.uid).set({
+                username: 'teacher',
+                full_name: 'Sample Teacher',
+                email: 'teacher@philtech.edu',
+                role: 'teacher',
+                status: 'Active',
+                created_at: new Date().toISOString()
+            });
+            
             console.log('✅ Default Firebase users created');
         }
+
+        // Create default Firestore employees for attendance.html if none exist
+        const employeesSnapshot = await db.collection('employees').limit(1).get();
+        if (employeesSnapshot.empty) {
+            console.log('👥 Creating default Firebase employees...');
+
+            const employees = [
+                // Admin staff (EDA + Admin Master)
+                {
+                    employee_id: 'ADMIN001',
+                    full_name: 'Admin Staff One',
+                    position: 'Account Clerk',
+                    department: 'Administration',
+                    employment_type: 'Regular',
+                    assignment: 'admin',
+                    status: 'Active',
+                    rate_admin: 70,
+                    rate_shs: 0,
+                    rate_college: 0,
+                    rate_guard: 0,
+                    rate_sa: 0,
+                    // numeric fields used by attendance.html (start at 0)
+                    basic_pay: 0,
+                    overtime_pay: 0,
+                    gross: 0,
+                    sss: 0,
+                    philhealth: 0,
+                    pagibig: 0,
+                    wtax: 0,
+                    sss_loan: 0,
+                    hdmf_loan: 0,
+                    cash_adv: 0,
+                    atm_dep: 0,
+                    transpo: 0,
+                    marketing: 0,
+                    net_pay: 0,
+                },
+
+                // SHS teachers
+                {
+                    employee_id: 'TCH_SHS_001',
+                    full_name: 'SHS Teacher One',
+                    position: 'Teacher',
+                    department: 'Academic',
+                    employment_type: 'Regular',
+                    assignment: 'shs_only',
+                    status: 'Active',
+                    rate_shs: 80,
+                    rate_college: 0,
+                    rate_admin: 0,
+                    rate_guard: 0,
+                    rate_sa: 0,
+                    subjects_shs: ['Math'],
+                    subjects_college: [],
+                    // teacher payroll fields (start at 0)
+                    regular_hrs: 0,
+                    admin_hrs: 0,
+                    gross_pay: 0,
+                    sss: 0,
+                    philhealth: 0,
+                    pagibig: 0,
+                    wtax: 0,
+                    sss_loan: 0,
+                    hdmf_loan: 0,
+                    cash_adv: 0,
+                    atm_dep: 0,
+                    marketing: 0,
+                    net_pay: 0,
+                },
+
+                // College teachers
+                {
+                    employee_id: 'TCH_COL_001',
+                    full_name: 'College Teacher One',
+                    position: 'Teacher',
+                    department: 'Academic',
+                    employment_type: 'Regular',
+                    assignment: 'college_only',
+                    status: 'Active',
+                    rate_shs: 0,
+                    rate_college: 85,
+                    rate_admin: 0,
+                    rate_guard: 0,
+                    rate_sa: 0,
+                    subjects_shs: [],
+                    subjects_college: ['Physics'],
+                    regular_hrs: 0,
+                    admin_hrs: 0,
+                    gross_pay: 0,
+                    sss: 0,
+                    philhealth: 0,
+                    pagibig: 0,
+                    wtax: 0,
+                    sss_loan: 0,
+                    hdmf_loan: 0,
+                    cash_adv: 0,
+                    atm_dep: 0,
+                    marketing: 0,
+                    net_pay: 0,
+                },
+
+                // Both SHS + College teacher
+                {
+                    employee_id: 'TCH_BOTH_001',
+                    full_name: 'Both Teacher One',
+                    position: 'Teacher',
+                    department: 'Academic',
+                    employment_type: 'Regular',
+                    assignment: 'both',
+                    status: 'Active',
+                    rate_shs: 82,
+                    rate_college: 90,
+                    rate_admin: 0,
+                    rate_guard: 0,
+                    rate_sa: 0,
+                    subjects_shs: ['English'],
+                    subjects_college: ['Calculus'],
+                    regular_hrs: 0,
+                    admin_hrs: 0,
+                    gross_pay: 0,
+                    sss: 0,
+                    philhealth: 0,
+                    pagibig: 0,
+                    wtax: 0,
+                    sss_loan: 0,
+                    hdmf_loan: 0,
+                    cash_adv: 0,
+                    atm_dep: 0,
+                    marketing: 0,
+                    net_pay: 0,
+                },
+
+                // Guard
+                {
+                    employee_id: 'GUARD_001',
+                    full_name: 'Guard One',
+                    position: 'Security Guard',
+                    department: 'Security',
+                    employment_type: 'Contractual',
+                    assignment: 'guard',
+                    status: 'Active',
+                    rate_guard: 433.33,
+                    rate_shs: 0,
+                    rate_college: 0,
+                    rate_admin: 0,
+                    rate_sa: 0,
+                    daily_attendance: {},
+                    days_worked: 0,
+                    total_pay: 0,
+                },
+
+                // Student assistant
+                {
+                    employee_id: 'SA_001',
+                    full_name: 'Student Assistant One',
+                    position: 'Student Assistant',
+                    department: 'Academic',
+                    employment_type: 'Contractual',
+                    assignment: 'sa',
+                    status: 'Active',
+                    rate_sa: 250,
+                    rate_shs: 0,
+                    rate_college: 0,
+                    rate_admin: 0,
+                    rate_guard: 0,
+                    daily_attendance: {},
+                    days_worked: 0,
+                    total_pay: 0,
+                },
+            ];
+
+            // Use Firestore doc IDs as incrementing numbers to align with attendance/tab logic
+            // (attendance.html uses doc.id as emp.id and compares numerically in some places)
+            for (let i = 0; i < employees.length; i++) {
+                const docId = String(i + 1);
+                await db.collection('employees').doc(docId).set({
+                    ...employees[i],
+                    id: i + 1
+                });
+            }
+
+            console.log('✅ Default Firebase employees created');
+        }
+
     } catch (error) {
         console.error('❌ Firestore initialization error:', error);
     }
