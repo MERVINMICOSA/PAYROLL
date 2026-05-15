@@ -1137,16 +1137,34 @@
 
         async function loadEmployees() {
             try {
+                // 1) Try Firestore first
                 const snapshot = await getDocs(collection(firestoreDB, "employees"));
                 allEmployees = [];
                 snapshot.forEach(doc => {
                     allEmployees.push({ id: doc.id, ...doc.data() });
                 });
-                console.log(`Loaded ${allEmployees.length} employees from Firebase`);
+                console.log(`✅ Loaded ${allEmployees.length} employees from Firestore`);
                 updateStatistics();
-            } catch (error) {
-                console.error("Error loading employees:", error);
-                showToast("Error loading employees", "error");
+                return;
+            } catch (firebaseError) {
+                console.warn('Firestore employees failed, falling back to PostgreSQL:', firebaseError.message);
+            }
+
+            try {
+                // 2) Fallback to PostgreSQL
+                const resp = await fetch('/api/employees', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                allEmployees = await resp.json();
+                console.log(`✅ Loaded ${allEmployees.length} employees from PostgreSQL`);
+                updateStatistics();
+            } catch (pgError) {
+                console.error('Could not load employees from any source:', pgError);
+                showError('Failed to load employee data. Please try again later.', pgError.message);
+                allEmployees = [];
+                updateStatistics();
             }
         }
         
@@ -1255,12 +1273,25 @@
         async function loadTabData() {
             const config = TAB_CONFIG[currentTab];
             let filteredEmployees = allEmployees.filter(config.employeeFilter);
-            
+
             if (currentTab === 'faculty-merge') {
                 await renderMergeTab();
                 return;
             }
-            
+
+            // Safety guard: never call attendance endpoints with empty/invalid period params
+            if ((config.hasDynamicDates || config.hasDynamicDates === true) && (!currentPeriod.start || !currentPeriod.end)) {
+                showError('Please set a payroll period (start & end dates) before loading attendance.');
+                return;
+            }
+
+            // Static tabs also depend on period in the backend (admin-master/admin-pay/shs etc.)
+            if (!currentPeriod.start || !currentPeriod.end) {
+                // Still render table with zeros rather than spamming 400s
+                await renderStaticTab(filteredEmployees, config);
+                return;
+            }
+
             if (config.hasDynamicDates && currentPeriod.start && currentPeriod.end) {
                 generatePeriodDates(currentPeriod.start, currentPeriod.end);
                 await renderDynamicDateTab(filteredEmployees, config);

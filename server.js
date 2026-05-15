@@ -47,7 +47,9 @@ if (!databaseUrl) {
 
 const pool = new Pool({
     connectionString: databaseUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: (databaseUrl && databaseUrl.includes('sslmode=require')) || process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: false }
+        : false
 });
 
 // ============================================
@@ -754,40 +756,45 @@ app.get('/api/period/get', async (req, res) => {
         const result = await pool.query(
             'SELECT current_period_start, current_period_end FROM period_settings ORDER BY id DESC LIMIT 1'
         );
-        
-        let start, end;
-        
+
         if (result.rows.length > 0) {
-            start = result.rows[0].current_period_start;
-            end = result.rows[0].current_period_end;
-        } else {
-            // Calculate default semi-month period
-            const today = new Date();
-            const day = today.getDate();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            
-            if (day <= 15) {
-                start = `${year}-${month}-01`;
-                end = `${year}-${month}-15`;
-            } else {
-                start = `${year}-${month}-16`;
-                const lastDay = new Date(year, parseInt(month), 0).getDate();
-                end = `${year}-${month}-${lastDay}`;
-            }
+            return res.json({
+                success: true,
+                period: {
+                    start: result.rows[0].current_period_start,
+                    end: result.rows[0].current_period_end
+                }
+            });
         }
-        
-        res.json({
-            success: true,
-            period: {
-                start,
-                end
-            }
-        });
-    } catch (error) {
-        console.error('Get period error:', error);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        // Table may not exist or columns may be missing – log and fall through to fallback
+        console.warn('period_settings query failed (table/columns may be missing):', err.message);
     }
+
+    // Fallback: calculate default semi-month period (guaranteed valid YYYY-MM-DD)
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1; // 1-12
+    const day = today.getDate();
+
+    const yyyy = year;
+    const mm = String(month).padStart(2, '0');
+
+    let start, end;
+    if (day <= 15) {
+        start = `${yyyy}-${mm}-01`;
+        end = `${yyyy}-${mm}-15`;
+    } else {
+        start = `${yyyy}-${mm}-16`;
+        const lastDay = new Date(year, month, 0).getDate();
+        end = `${yyyy}-${mm}-${lastDay}`;
+    }
+
+    return res.json({
+        success: true,
+        period: { start, end },
+        is_default: true
+    });
 });
 
 app.post('/api/period/set', async (req, res) => {
