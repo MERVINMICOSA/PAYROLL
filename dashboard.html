@@ -198,41 +198,56 @@
         let employeeChart = null;
         let moneyVisible = false;
         
-        // Load employees from Firebase
-        async function loadEmployeesFromFirebase() {
+        // Load employees (Firestore first, then PostgreSQL fallback)
+        async function loadEmployees() {
             try {
                 const snapshot = await getDocs(collection(firestoreDB, "employees"));
                 const employees = [];
                 snapshot.forEach(doc => {
                     employees.push({ id: doc.id, ...doc.data() });
                 });
-                console.log("Firebase employees loaded:", employees.length);
+                console.log("✅ Loaded employees from Firestore:", employees.length);
                 return employees;
-            } catch (error) {
-                console.error("Error loading from Firebase:", error);
-                return [];
-            }
-        }
-        
-        // Load payroll from API
-        async function loadPayrollFromAPI() {
-            try {
+            } catch (firebaseError) {
+                console.warn('Firestore employees failed, falling back to PostgreSQL:', firebaseError?.message || firebaseError);
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/payroll', {
+                const response = await fetch('/api/employees', {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token ? 'Bearer ' + token : ''
                     }
                 });
-                if (response.ok) {
-                    return await response.json();
-                }
-            } catch (error) {
-                console.log("Payroll API not available yet");
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const employees = await response.json();
+                console.log("✅ Loaded employees from PostgreSQL:", employees.length);
+                return Array.isArray(employees) ? employees : [];
             }
-            return [];
         }
-        
+
+        function getCurrentMonthRange() {
+            const now = new Date();
+            const start = new Date(now.getFullYear(), now.getMonth(), 1);
+            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            const toYMD = (d) => d.toISOString().slice(0, 10);
+            return { start: toYMD(start), end: toYMD(end) };
+        }
+
+        // Load payroll dashboard numbers (Firestore not used here; PostgreSQL summary endpoint)
+        async function loadPayrollSummaryFromAPI() {
+            const { start, end } = getCurrentMonthRange();
+            const token = localStorage.getItem('token');
+
+            // NOTE: This endpoint returns monthly attendance-based payroll figures summary, not the full payroll rows.
+            const response = await fetch(`/api/payroll/summary?period_start=${encodeURIComponent(start)}&period_end=${encodeURIComponent(end)}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? 'Bearer ' + token : ''
+                }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        }
+
         window.toggleMoneyVisibility = () => {
             moneyVisible = !moneyVisible;
             document.querySelectorAll('.money-blur, .money-visible').forEach(el => {
@@ -257,48 +272,55 @@
         
         async function loadDashboardData() {
             console.log("Loading dashboard data...");
-            
-            allEmployees = await loadEmployeesFromFirebase();
-            allPayroll = await loadPayrollFromAPI();
-            
-            console.log("Employees:", allEmployees.length);
-            console.log("Payroll:", allPayroll.length);
-            
-            document.getElementById('totalEmployees').textContent = allEmployees.length;
-            
-            const currentMonth = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-            const monthlyTotal = allPayroll.filter(p => p.period === currentMonth).reduce((sum, p) => sum + (p.net_salary || 0), 0);
-            document.getElementById('monthlyPayroll').innerHTML = '₱' + monthlyTotal.toLocaleString();
-            
-            const pendingCount = allPayroll.filter(p => p.status === 'Pending').length;
-            document.getElementById('pendingPayroll').textContent = pendingCount;
-            
-            const deductions = allPayroll.reduce((sum, p) => sum + (p.total_deduction || 0), 0);
-            document.getElementById('totalDeductions').innerHTML = '₱' + deductions.toLocaleString();
-            
-            const recent = [...allPayroll].reverse().slice(0, 5);
-            const tbody = document.getElementById('recentPayrollTable');
-            if (recent.length === 0) {
-                tbody.innerHTML = '<td colspan="6" class="py-8 text-center text-gray-400">No payroll records found<\/td><\/tr>';
-            } else {
-                tbody.innerHTML = recent.map(p => {
-                    const emp = allEmployees.find(e => e.id === p.employee_id) || { full_name: 'Unknown' };
-                    let statusClass = 'bg-yellow-100 text-yellow-600';
-                    if (p.status === 'Approved') statusClass = 'bg-green-100 text-green-600';
-                    return `<tr class="border-b hover:bg-gray-50">
-                        <td class="py-3 px-6 font-medium">${escapeHtml(emp.full_name)}<\/td>
-                        <td class="py-3">${p.period || 'N/A'}<\/td>
-                        <td class="py-3">₱${(p.gross_salary || 0).toLocaleString()}<\/td>
-                        <td class="py-3">₱${(p.total_deduction || 0).toLocaleString()}<\/td>
-                        <td class="py-3 font-medium text-[#b0303b]">₱${(p.net_salary || 0).toLocaleString()}<\/td>
-                        <td class="py-3"><span class="px-2 py-1 rounded-full text-xs ${statusClass}">${p.status || 'Pending'}<\/span><\/td>
-                    <\/tr>`;
-                }).join('');
+
+            // Always initialize arrays to prevent `.filter/.reduce` crashes
+            allEmployees = Array.isArray(allEmployees) ? allEmployees : [];
+            allPayroll = Array.isArray(allPayroll) ? allPayroll : [];
+
+            try {
+            allEmployees = await loadEmployees();
+
+                const summary = await loadPayrollSummaryFromAPI();
+                const monthlyTotal = Number(summary?.total_net ?? 0);
+
+                // Ensure payroll array exists to avoid chart/render crashes.
+                allPayroll = [];
+
+
+                document.getElementById('totalEmployees').textContent = (allEmployees || []).length;
+                document.getElementById('monthlyPayroll').innerHTML = '₱' + monthlyTotal.toLocaleString();
+
+                // Summary endpoint doesn't include status breakdown.
+                document.getElementById('pendingPayroll').textContent = 0;
+
+                // total_deductions = gross - net (summary provides total_gross + total_net)
+                const gross = Number(summary?.total_gross ?? 0);
+                const deductions = Math.max(0, gross - monthlyTotal);
+                document.getElementById('totalDeductions').innerHTML = '₱' + deductions.toLocaleString();
+
+                // No detailed payroll rows from summary endpoint.
+                const tbody = document.getElementById('recentPayrollTable');
+                tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">No payroll records found<\/td><\/tr>';
+
+                // Charts will rely on empty arrays when detail isn't available.
+                updatePayrollChart();
+                updateEmployeeChart();
+            } catch (error) {
+                console.error('Dashboard load failed:', error);
+
+                const tbody = document.getElementById('recentPayrollTable');
+                tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400">Failed to load dashboard data<\/td><\/tr>';
+
+                document.getElementById('totalEmployees').textContent = 0;
+                document.getElementById('monthlyPayroll').innerHTML = '₱0';
+                document.getElementById('pendingPayroll').textContent = 0;
+                document.getElementById('totalDeductions').innerHTML = '₱0';
+
+                updatePayrollChart();
+                updateEmployeeChart();
             }
-            
-            updatePayrollChart();
-            updateEmployeeChart();
         }
+
         
         function updatePayrollChart() {
             if (payrollChart) payrollChart.destroy();
