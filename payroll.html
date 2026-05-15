@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Philtech GMA | Payroll</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -112,11 +112,30 @@
                 const response = await fetch('/api/payroll', {
                     headers: { 'Authorization': token ? 'Bearer ' + token : '' }
                 });
-                if (response.ok) {
-                    allPayroll = await response.json();
+
+                if (!response.ok) {
+                    allPayroll = [];
+                    return;
+                }
+
+                const data = await response.json();
+
+                // API responses may be inconsistent; normalize to array.
+                // Expected: [ ... ]
+                // Variants: { data: [ ... ] }, { payroll: [ ... ] }
+                if (Array.isArray(data)) {
+                    allPayroll = data;
+                } else if (data && Array.isArray(data.data)) {
+                    allPayroll = data.data;
+                } else if (data && Array.isArray(data.payroll)) {
+                    allPayroll = data.payroll;
                 } else {
                     allPayroll = [];
                 }
+
+                // Final safety: ensure reduce/filter won't crash.
+                if (!Array.isArray(allPayroll)) allPayroll = [];
+
                 console.log("Payroll loaded:", allPayroll.length);
             } catch (error) {
                 console.log("Payroll API not available yet");
