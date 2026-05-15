@@ -6,6 +6,8 @@ const path = require('path');
 const cors = require('cors');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 // ============================================
 // ADDED: Firebase Admin
 // ============================================
@@ -14,6 +16,7 @@ const admin = require('firebase-admin');
 const app = express();
 const PORT = process.env.PORT || 10000;
 const HOST = '0.0.0.0';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 // ============================================
 // PostgreSQL connection helper
@@ -73,6 +76,7 @@ try {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ============================================
 // EXISTING: Database Initialization (PostgreSQL)
@@ -449,12 +453,38 @@ app.post('/api/auth/login', async (req, res) => {
         }
         
         const { password_hash, ...userInfo } = user;
+        
+        // Create JWT token
+        const token = jwt.sign(
+            { 
+                id: user.id,
+                username: user.username,
+                full_name: user.full_name,
+                email: user.email,
+                role: user.role
+            },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+        
+        // Set secure HTTP-only cookie
+        res.cookie('authToken', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'Lax',
+            maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        });
+        
         res.json({ 
             success: true, 
             user: userInfo,
-            redirect: userInfo.role === 'superadmin' ? '/superadmin-dashboard.html' :
-                     userInfo.role === 'accountant' ? '/accountant-dashboard.html' :
-                     '/teacher-dashboard.html'
+            redirect: userInfo.role === 'superadmin' ? 'dashboardSadmin.html' :
+                     userInfo.role === 'accountant' ? 'dashboard.html' :
+                     userInfo.role === 'oic' ? 'dashboard-oic.html' :
+                     userInfo.role === 'teacher' ? 'teacher-dashboard.html' :
+                     userInfo.role === 'guard' ? 'dashboard-guard.html' :
+                     userInfo.role === 'sa' ? 'dashboard-sa.html' :
+                     'dashboard.html'
         });
         
     } catch (error) {
@@ -516,16 +546,37 @@ app.post('/api/auth/firebase-login', async (req, res) => {
 // ============================================
 app.get('/api/auth/session', async (req, res) => {
     try {
-        // For now, return a simple status indicating session is available
-        // In a full implementation, this would check req.session or JWT
+        const token = req.cookies.authToken;
+        
+        if (!token) {
+            return res.status(401).json({ 
+                success: false,
+                authenticated: false,
+                error: 'No active session'
+            });
+        }
+        
+        // Verify and decode JWT
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
         res.json({ 
             success: true,
-            authenticated: false, // Default to false; could check cookies here
-            message: 'Session endpoint available'
+            authenticated: true,
+            user: {
+                id: decoded.id,
+                username: decoded.username,
+                full_name: decoded.full_name,
+                email: decoded.email,
+                role: decoded.role
+            }
         });
     } catch (error) {
         console.error('Session check error:', error);
-        res.status(500).json({ error: 'Server error' });
+        res.status(401).json({ 
+            success: false,
+            authenticated: false,
+            error: 'Invalid or expired session'
+        });
     }
 });
 
@@ -534,8 +585,8 @@ app.get('/api/auth/session', async (req, res) => {
 // ============================================
 app.post('/api/auth/logout', async (req, res) => {
     try {
-        // Clear any session data if needed
-        // In a full implementation, would clear req.session
+        // Clear auth cookie
+        res.clearCookie('authToken');
         res.json({ 
             success: true,
             message: 'Logged out successfully'

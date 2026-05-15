@@ -5,6 +5,8 @@ services:
     runtime: node
     repo: https://github.com/MERVINMICOSA/PAYROLL.git
     branch: main
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -23,10 +25,16 @@ services:
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false
     healthCheckPath: /api/health
+    health_check:
+      path: /api/health
+      poll_interval_seconds: 30
+      timeout_sec: 5
 
 databases:
   - name: philtech-payroll-db
     databaseName: payroll_db
     user: payroll_user
+    ipAllowList: []
+
     plan: free
     postgresMajorVersion: 15
