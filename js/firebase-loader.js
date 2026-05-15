@@ -4,15 +4,16 @@ let firebaseInitialized = false;
 
 async function loadFirebaseConfig() {
     try {
-        const response = await fetch('/api/config/firebase-config.php');
+        const response = await fetch('/api/config/firebase-config');
         const data = await response.json();
         
-        if (!data.success) {
-            console.error('Failed to load Firebase config:', data.error);
+        // The Node.js endpoint returns the config directly
+        if (!data.apiKey) {
+            console.error('Failed to load Firebase config: invalid response');
             return null;
         }
         
-        firebaseConfig = data.config;
+        firebaseConfig = data;
         console.log('Firebase config loaded from server');
         return firebaseConfig;
     } catch (error) {

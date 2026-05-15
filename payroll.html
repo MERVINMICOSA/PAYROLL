@@ -109,7 +109,7 @@
         async function loadPayroll() {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/payroll.php', {
+                const response = await fetch('/api/payroll', {
                     headers: { 'Authorization': token ? 'Bearer ' + token : '' }
                 });
                 if (response.ok) {

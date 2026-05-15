@@ -82,7 +82,7 @@ const dashboards = {
 // ===========================
 async function checkSession() {
     try {
-        const response = await fetch('/api/auth/session.php', {
+        const response = await fetch('/api/auth/session', {
             method: 'GET',
             credentials: 'include'
         });
@@ -173,7 +173,7 @@ function goBack() {
 // ===========================
 async function logout() {
     try {
-        await fetch('/api/auth/logout.php', {
+        await fetch('/api/auth/logout', {
             method: 'POST',
             credentials: 'include'
         });
@@ -418,14 +418,14 @@ let notificationDropdown = null;
 
 async function loadNotifications() {
     try {
-        const response = await fetch('/api/notifications/get.php', {
+        const response = await fetch('/api/notifications/get', {
             method: 'GET',
             credentials: 'include'
         });
         
         if (response.ok) {
             const data = await response.json();
-            notifications = data.notifications || [];
+            notifications = Array.isArray(data) ? data : (data.notifications || []);
             unreadCount = data.unread_count || 0;
             updateNotificationBell();
             return true;
@@ -456,11 +456,11 @@ function updateNotificationBell() {
 
 async function markNotificationRead(notificationId) {
     try {
-        const response = await fetch('/api/notifications/mark-read.php', {
+        const response = await fetch('/api/notifications/mark-read', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ notification_id: notificationId })
+            body: JSON.stringify({ notificationId: notificationId })
         });
         
         if (response.ok) {
@@ -473,11 +473,11 @@ async function markNotificationRead(notificationId) {
 
 async function markAllNotificationsRead() {
     try {
-        const response = await fetch('/api/notifications/mark-read.php', {
+        const response = await fetch('/api/notifications/mark-read', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ mark_all: true })
+            body: JSON.stringify({ markAll: true })
         });
         
         if (response.ok) {

@@ -1157,7 +1157,7 @@
         async function loadSavedPeriod() {
             try {
                 // Try to load from API first
-                const response = await fetch('/api/period/get.php', {
+                const response = await fetch('/api/period/get', {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -1273,7 +1273,7 @@
             let savedData = {};
             
             try {
-                const response = await apiCallWithRetry(`/api/attendance/${currentTab}.php?period_start=${currentPeriod.start || ''}&period_end=${currentPeriod.end || ''}`, {
+                const response = await apiCallWithRetry(`/api/attendance/${currentTab}?period_start=${currentPeriod.start || ''}&period_end=${currentPeriod.end || ''}`, {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -1332,7 +1332,7 @@
             let savedData = {};
             
             try {
-                const response = await apiCallWithRetry(`/api/attendance/${currentTab}.php?period_start=${currentPeriod.start}&period_end=${currentPeriod.end}`, {
+                const response = await apiCallWithRetry(`/api/attendance/${currentTab}?period_start=${currentPeriod.start}&period_end=${currentPeriod.end}`, {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -1393,7 +1393,7 @@
             }
             
             try {
-                const response = await fetch(`/api/payroll/summary.php?period_start=${start}&period_end=${end}`, {
+                const response = await fetch(`/api/payroll/summary?period_start=${start}&period_end=${end}`, {
                     method: 'GET',
                     credentials: 'include'
                 });
@@ -1646,7 +1646,7 @@
                     });
                 }
                 
-                const response = await fetch(`/api/attendance/${currentTab}.php`, {
+                const response = await fetch(`/api/attendance/${currentTab}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
@@ -1686,7 +1686,7 @@
             document.body.appendChild(indicator);
             
             try {
-                const response = await fetch(`/api/attendance/${currentTab}.php`, {
+                const response = await fetch(`/api/attendance/${currentTab}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1733,7 +1733,7 @@
             document.body.appendChild(indicator);
             
             try {
-                const response = await fetch(`/api/attendance/${currentTab}.php`, {
+                const response = await fetch(`/api/attendance/${currentTab}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1782,7 +1782,7 @@
             
             try {
                 // Save to backend via API
-                const response = await fetch('/api/period/set.php', {
+                const response = await fetch('/api/period/set', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
@@ -1962,7 +1962,7 @@
         
         window.logout = async function() {
             try {
-                await fetch('/api/auth/logout.php', {
+                await fetch('/api/auth/logout', {
                     method: 'POST',
                     credentials: 'include'
                 });

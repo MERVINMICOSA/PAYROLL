@@ -218,7 +218,7 @@
         async function loadPayrollFromAPI() {
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/payroll.php', {
+                const response = await fetch('/api/payroll', {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token ? 'Bearer ' + token : ''

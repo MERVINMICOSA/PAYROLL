@@ -512,6 +512,118 @@ app.post('/api/auth/firebase-login', async (req, res) => {
 });
 
 // ============================================
+// ADDED: Session check endpoint
+// ============================================
+app.get('/api/auth/session', async (req, res) => {
+    try {
+        // For now, return a simple status indicating session is available
+        // In a full implementation, this would check req.session or JWT
+        res.json({ 
+            success: true,
+            authenticated: false, // Default to false; could check cookies here
+            message: 'Session endpoint available'
+        });
+    } catch (error) {
+        console.error('Session check error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ============================================
+// ADDED: Logout endpoint
+// ============================================
+app.post('/api/auth/logout', async (req, res) => {
+    try {
+        // Clear any session data if needed
+        // In a full implementation, would clear req.session
+        res.json({ 
+            success: true,
+            message: 'Logged out successfully'
+        });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ============================================
+// ADDED: Firebase config endpoint
+// ============================================
+app.get('/api/config/firebase-config', (req, res) => {
+    try {
+        // Return public Firebase config from environment or hardcoded
+        // These are PUBLIC values (not secrets), safe to expose
+        const firebaseConfig = {
+            apiKey: process.env.FIREBASE_API_KEY || 'AIzaSyDemoKey',
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN || 'philtech-demo.firebaseapp.com',
+            projectId: process.env.FIREBASE_PROJECT_ID || 'philtech-demo',
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'philtech-demo.appspot.com',
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '123456789',
+            appId: process.env.FIREBASE_APP_ID || '1:123456789:web:abc123'
+        };
+        res.json(firebaseConfig);
+    } catch (error) {
+        console.error('Firebase config error:', error);
+        res.status(500).json({ error: 'Failed to retrieve config' });
+    }
+});
+
+// ============================================
+// ADDED: Get notifications endpoint
+// ============================================
+app.get('/api/notifications/get', async (req, res) => {
+    try {
+        // Return empty notifications array or fetch from Firestore if available
+        const notifications = [];
+        
+        if (firebaseInitialized) {
+            const db = admin.firestore();
+            // In a real app, filter by current user
+            const notifSnapshot = await db.collection('notifications')
+                .orderBy('created_at', 'desc')
+                .limit(10)
+                .get();
+            
+            notifSnapshot.forEach(doc => {
+                notifications.push({ id: doc.id, ...doc.data() });
+            });
+        }
+        
+        res.json(notifications);
+    } catch (error) {
+        console.error('Get notifications error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ADDED: Mark notification as read endpoint
+// ============================================
+app.post('/api/notifications/mark-read', async (req, res) => {
+    try {
+        if (!firebaseInitialized) {
+            return res.status(503).json({ error: 'Firebase not configured' });
+        }
+        
+        const { notificationId } = req.body;
+        if (!notificationId) {
+            return res.status(400).json({ error: 'Notification ID required' });
+        }
+        
+        const db = admin.firestore();
+        await db.collection('notifications').doc(notificationId).update({
+            read: true,
+            read_at: new Date().toISOString()
+        });
+        
+        res.json({ success: true, message: 'Notification marked as read' });
+    } catch (error) {
+        console.error('Mark read error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
 // ADDED: Create user endpoint (for accountant/superadmin)
 // ============================================
 app.post('/api/users/create', async (req, res) => {
@@ -578,6 +690,310 @@ app.get('/api/users', async (req, res) => {
         
     } catch (error) {
         console.error('Get users error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ADDED: Period management endpoints
+// ============================================
+app.get('/api/period/get', async (req, res) => {
+    try {
+        // Try to get current period from database
+        const result = await pool.query(
+            'SELECT current_period_start, current_period_end FROM period_settings ORDER BY id DESC LIMIT 1'
+        );
+        
+        let start, end;
+        
+        if (result.rows.length > 0) {
+            start = result.rows[0].current_period_start;
+            end = result.rows[0].current_period_end;
+        } else {
+            // Calculate default semi-month period
+            const today = new Date();
+            const day = today.getDate();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            
+            if (day <= 15) {
+                start = `${year}-${month}-01`;
+                end = `${year}-${month}-15`;
+            } else {
+                start = `${year}-${month}-16`;
+                const lastDay = new Date(year, parseInt(month), 0).getDate();
+                end = `${year}-${month}-${lastDay}`;
+            }
+        }
+        
+        res.json({
+            success: true,
+            period: {
+                start,
+                end
+            }
+        });
+    } catch (error) {
+        console.error('Get period error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/period/set', async (req, res) => {
+    try {
+        const { period_start, period_end } = req.body;
+        
+        if (!period_start || !period_end) {
+            return res.status(400).json({ error: 'Period start and end required' });
+        }
+        
+        // Update or insert period setting
+        const updateResult = await pool.query(
+            `UPDATE period_settings 
+             SET current_period_start = $1, current_period_end = $2, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = 1 
+             RETURNING *`,
+            [period_start, period_end]
+        );
+        
+        if (updateResult.rows.length === 0) {
+            // Insert if no row exists
+            await pool.query(
+                `INSERT INTO period_settings (id, current_period_start, current_period_end, created_at, updated_at) 
+                 VALUES (1, $1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [period_start, period_end]
+            );
+        }
+        
+        res.json({
+            success: true,
+            message: 'Period updated successfully',
+            period: {
+                start: period_start,
+                end: period_end
+            }
+        });
+    } catch (error) {
+        console.error('Set period error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ADDED: Attendance endpoints
+// ============================================
+app.get('/api/attendance/:tab', async (req, res) => {
+    try {
+        const { tab } = req.params;
+        const periodStart = req.query.period_start;
+        const periodEnd = req.query.period_end;
+        
+        if (!periodStart || !periodEnd) {
+            return res.status(400).json({ error: 'Period start and end required' });
+        }
+        
+        let tableName = '';
+        
+        // Map tab names to table names
+        const tabMap = {
+            'admin-master': 'attendance_admin_master',
+            'admin-pay': 'attendance_admin_pay',
+            'shs-dtr': 'attendance_faculty_shs',
+            'shs-loading': 'attendance_shs_loading',
+            'college-dtr': 'attendance_faculty_college',
+            'college-loading': 'attendance_college_loading',
+            'faculty-shs': 'attendance_faculty_shs',
+            'faculty-college': 'attendance_faculty_college',
+            'guard': 'attendance_guard',
+            'sa': 'attendance_sa',
+            'eda': 'attendance_admin_master'
+        };
+        
+        tableName = tabMap[tab] || `attendance_${tab}`;
+        
+        // Get attendance data with error handling for missing tables
+        let attendanceData = [];
+        try {
+            const result = await pool.query(
+                `SELECT * FROM ${tableName} 
+                 WHERE period_start = $1 AND period_end = $2 
+                 ORDER BY employee_id`,
+                [periodStart, periodEnd]
+            );
+            attendanceData = result.rows;
+        } catch (err) {
+            // Table might not exist yet - return empty array
+            console.warn(`Table ${tableName} not found or error querying:`, err.message);
+            attendanceData = [];
+        }
+        
+        res.json({
+            success: true,
+            tab,
+            period_start: periodStart,
+            period_end: periodEnd,
+            data: attendanceData,
+            count: attendanceData.length
+        });
+    } catch (error) {
+        console.error('Get attendance error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/attendance/:tab', async (req, res) => {
+    try {
+        const { tab } = req.params;
+        const { employee_id, period_start, period_end, ...attendanceData } = req.body;
+        
+        if (!employee_id || !period_start || !period_end) {
+            return res.status(400).json({ error: 'Employee ID, period start and end required' });
+        }
+        
+        let tableName = '';
+        const tabMap = {
+            'admin-master': 'attendance_admin_master',
+            'admin-pay': 'attendance_admin_pay',
+            'shs-dtr': 'attendance_faculty_shs',
+            'shs-loading': 'attendance_shs_loading',
+            'college-dtr': 'attendance_faculty_college',
+            'college-loading': 'attendance_college_loading',
+            'faculty-shs': 'attendance_faculty_shs',
+            'faculty-college': 'attendance_faculty_college',
+            'guard': 'attendance_guard',
+            'sa': 'attendance_sa',
+            'eda': 'attendance_admin_master'
+        };
+        
+        tableName = tabMap[tab] || `attendance_${tab}`;
+        
+        // Build dynamic update query
+        const columns = Object.keys(attendanceData);
+        const values = Object.values(attendanceData);
+        const setClause = columns.map((col, idx) => `${col} = $${idx + 1}`).join(', ');
+        
+        try {
+            await pool.query(
+                `UPDATE ${tableName} 
+                 SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
+                 WHERE employee_id = $${columns.length + 1} 
+                 AND period_start = $${columns.length + 2} 
+                 AND period_end = $${columns.length + 3}`,
+                [...values, employee_id, period_start, period_end]
+            );
+            
+            res.json({ success: true, message: 'Attendance updated' });
+        } catch (err) {
+            console.error('Update error:', err);
+            res.status(500).json({ error: 'Failed to update attendance' });
+        }
+    } catch (error) {
+        console.error('Post attendance error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ADDED: Payroll endpoints
+// ============================================
+app.get('/api/payroll/summary', async (req, res) => {
+    try {
+        const periodStart = req.query.period_start;
+        const periodEnd = req.query.period_end;
+        
+        if (!periodStart || !periodEnd) {
+            return res.status(400).json({ error: 'Period start and end required' });
+        }
+        
+        // Aggregate data from all attendance tables
+        const summary = {
+            shs: { count: 0, gross: 0, sss: 0, philhealth: 0, pagibig: 0, net: 0 },
+            college: { count: 0, gross: 0, sss: 0, philhealth: 0, pagibig: 0, net: 0 },
+            admin: { count: 0, gross: 0, sss: 0, philhealth: 0, pagibig: 0, net: 0 },
+            guard: { count: 0, gross: 0, sss: 0, philhealth: 0, pagibig: 0, net: 0 },
+            sa: { count: 0, gross: 0, sss: 0, philhealth: 0, pagibig: 0, net: 0 }
+        };
+        
+        // Helper function to safely query table
+        const queryTable = async (tableName, category) => {
+            try {
+                const result = await pool.query(
+                    `SELECT 
+                     COUNT(*) as count, 
+                     COALESCE(SUM(gross_pay), SUM(gross), 0) as gross,
+                     COALESCE(SUM(sss), 0) as sss,
+                     COALESCE(SUM(philhealth), 0) as philhealth,
+                     COALESCE(SUM(pagibig), 0) as pagibig,
+                     COALESCE(SUM(net_pay), SUM(net), 0) as net
+                     FROM ${tableName}
+                     WHERE period_start = $1 AND period_end = $2`,
+                    [periodStart, periodEnd]
+                );
+                
+                if (result.rows.length > 0) {
+                    summary[category] = {
+                        count: parseInt(result.rows[0].count || 0),
+                        gross: parseFloat(result.rows[0].gross || 0),
+                        sss: parseFloat(result.rows[0].sss || 0),
+                        philhealth: parseFloat(result.rows[0].philhealth || 0),
+                        pagibig: parseFloat(result.rows[0].pagibig || 0),
+                        net: parseFloat(result.rows[0].net || 0)
+                    };
+                }
+            } catch (err) {
+                console.warn(`Table ${tableName} not found or error:`, err.message);
+            }
+        };
+        
+        // Query each category
+        await queryTable('attendance_faculty_shs', 'shs');
+        await queryTable('attendance_faculty_college', 'college');
+        await queryTable('attendance_admin_master', 'admin');
+        await queryTable('attendance_guard', 'guard');
+        await queryTable('attendance_sa', 'sa');
+        
+        // Calculate totals
+        const totals = {
+            total_faculty: (summary.shs.count || 0) + (summary.college.count || 0),
+            total_admin: summary.admin.count || 0,
+            total_gross: Object.values(summary).reduce((sum, cat) => sum + (cat.gross || 0), 0),
+            total_sss: Object.values(summary).reduce((sum, cat) => sum + (cat.sss || 0), 0),
+            total_philhealth: Object.values(summary).reduce((sum, cat) => sum + (cat.philhealth || 0), 0),
+            total_pagibig: Object.values(summary).reduce((sum, cat) => sum + (cat.pagibig || 0), 0),
+            total_net: Object.values(summary).reduce((sum, cat) => sum + (cat.net || 0), 0)
+        };
+        
+        res.json({
+            success: true,
+            ...summary,
+            ...totals
+        });
+    } catch (error) {
+        console.error('Payroll summary error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/payroll', async (req, res) => {
+    try {
+        const periodStart = req.query.period_start;
+        const periodEnd = req.query.period_end;
+        
+        // Get all employees with their payroll data
+        const result = await pool.query(
+            `SELECT e.id, e.employee_id, e.full_name, e.position, e.base_salary
+             FROM employees e
+             ORDER BY e.employee_id`
+        );
+        
+        res.json({
+            success: true,
+            employees: result.rows,
+            period_start: periodStart,
+            period_end: periodEnd
+        });
+    } catch (error) {
+        console.error('Get payroll error:', error);
         res.status(500).json({ error: error.message });
     }
 });

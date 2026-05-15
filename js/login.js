@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function handleLogin(username, password, rememberMe) {
     try {
-        const response = await fetch('/api/auth/login.php', {
+        const response = await fetch('/api/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -76,8 +76,8 @@ async function handleLogin(username, password, rememberMe) {
         const data = await response.json();
         
         if (data.success) {
-            // PHP session cookie is set by /api/auth/login.php
-            // Do NOT store auth token/user in localStorage to prevent auth mismatch with PHP sessions.
+            // Node.js backend returns session/user data
+            // Do NOT store auth token/user in localStorage to prevent auth mismatch with sessions.
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             localStorage.removeItem('userRole');
